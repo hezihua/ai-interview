@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/.env
+client
+workspace
+README.md
+docker-compose.yml
+.env
+.env.*
+!.env.example

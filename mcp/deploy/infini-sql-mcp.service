@@ -1,0 +1,15 @@
+[Unit]
+Description=Job Search MCP (streamable-http)
+After=network.target
+
+[Service]
+Type=simple
+User=hezihua
+WorkingDirectory=/home/hezihua/workspace/ai-interview/mcp
+EnvironmentFile=/home/hezihua/workspace/ai-interview/.env
+ExecStart=/home/hezihua/workspace/ai-interview/mcp/.venv/bin/python /home/hezihua/workspace/ai-interview/mcp/server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,62 @@
+services:
+  mcp:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    container_name: ai-interview-mcp
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-8765}:8765"
+    env_file:
+      - .env
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8765"
+      MCP_PATH: /mcp
+      WORKSPACE_DIR: /app/workspace
+    volumes:
+      - ./workspace:/app/workspace
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('127.0.0.1',8765),3); s.close()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: ai-interview-server
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8766}:8766"
+    env_file:
+      - .env
+    environment:
+      API_HOST: "0.0.0.0"
+      API_PORT: "8766"
+      MCP_URL: http://mcp:8765/mcp
+      PYTHONPATH: /app/agent
+    depends_on:
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
