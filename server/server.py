@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from agent import astream_answer_text, create_job_agent, last_ai_text
 from config import Settings, cors_origins_from_env
 from extract import ExtractError, extract_text
+from workbench import router as workbench_router
 from workspace import application_dir, read_text, resolve_doc_filename
 
 _state: dict[str, Any] = {}
@@ -79,6 +80,11 @@ def _require_api_auth(
 def _resolve_thread_id(thread_id: str | None) -> str:
     value = (thread_id or "").strip()
     return value or str(uuid.uuid4())
+
+
+app.include_router(
+    workbench_router, dependencies=[Depends(_require_api_auth)]
+)
 
 
 @app.get("/", include_in_schema=False)

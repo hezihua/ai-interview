@@ -1,10 +1,10 @@
-import { OverviewPage } from "@/components/overview-page";
+import { InterviewPage } from "@/components/interview-page";
 import { WorkbenchShell } from "@/components/workbench-shell";
 
-export default function Home() {
+export default function Page() {
   return (
     <WorkbenchShell>
-      <OverviewPage />
+      <InterviewPage />
     </WorkbenchShell>
   );
 }

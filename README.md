@@ -76,7 +76,7 @@ npm install --registry=https://registry.npmmirror.com
 npm run dev
 ```
 
-浏览器打开 `http://localhost:3000`。可发送文字，也可上传 **PDF / Word（.docx）/ Markdown**（一次最多 3 个）。旧版 `.doc` 请另存为 `.docx`。页面经 `/api/chat/stream` 转发到 FastAPI SSE。
+浏览器打开 `http://localhost:3000`。前端是 CareerOS 工作台：总览 / 职位评估 / 申请记录 / 面试准备四个页面，右侧常驻 SOP 规则与最近活动；右上角「导入 JD」或各页 CTA 会打开全局 Agent 对话抽屉，可发送文字，也可上传 **PDF / Word（.docx）/ Markdown**（一次最多 3 个）。旧版 `.doc` 请另存为 `.docx`。页面数据来自 FastAPI 的 `/v1/workbench/*` 只读 API，对话经 `/api/chat/stream` 转发到 FastAPI SSE。
 
 ### HTTP API
 
@@ -129,7 +129,7 @@ curl -s http://127.0.0.1:8766/health
 
 | 路径 | 作用 |
 |------|------|
-| `client/` | Next.js 对话页（`localhost:3000`） |
+| `client/` | Next.js 工作台（`localhost:3000`） |
 | `agent/main.py` | CLI |
 | `agent/agent.py` | `create_job_agent()` |
 | `agent/mcp_client.py` | mcp 2.x Client → LangChain tools |

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "求职助手",
+  title: "CareerOS · AI 求职工作台",
   description: "档案、评 JD、起草申请、面试准备",
 };
 

@@ -75,10 +75,10 @@ function DocumentShell({
             <h1 className="text-base font-semibold text-zinc-50">{title}</h1>
           </div>
           <Link
-            href="/"
+            href="/applications"
             className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-white/10"
           >
-            返回对话
+            返回申请记录
           </Link>
         </div>
       </header>
