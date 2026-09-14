@@ -1,4 +1,8 @@
-import { AGENT_API_BASE, agentAuthHeaders, type ChatRequest } from "@/lib/agent";
+import {
+  AGENT_CHAT_BASE,
+  agentAuthHeaders,
+  type ChatRequest,
+} from "@/lib/agent";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -18,7 +22,7 @@ export async function POST(request: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${AGENT_API_BASE}/v1/chat/stream`, {
+    upstream = await fetch(`${AGENT_CHAT_BASE}/v1/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -35,7 +39,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         detail: message,
-        hint: `确认 FastAPI 已在 ${AGENT_API_BASE} 运行`,
+        hint: `确认 agent-pi 已在 ${AGENT_CHAT_BASE} 运行`,
       },
       { status: 502 },
     );

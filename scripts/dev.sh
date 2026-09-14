@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地开发：MCP (8765) + FastAPI (8766) + Next.js (3000)
+# 本地开发：MCP (8765) + FastAPI (8766) + agent-pi (8767) + Next.js (3000)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,12 +15,13 @@ usage() {
   cat <<EOF
 用法: $(basename "$0") [start|stop|status]
 
-  start   启动三个服务（默认）
+  start   启动四个服务（默认）
   stop    停止由本脚本启动的进程
   status  查看端口与健康检查
 
 环境:
   需要 ${ROOT}/.env 与 ${ROOT}/.venv
+  agent-pi 依赖 ${ROOT}/agent-pi/node_modules
   WORKSPACE_DIR 固定为 ${WORKSPACE}
 EOF
 }
@@ -42,11 +43,9 @@ ensure_node() {
   fi
   local uid shell candidates=()
   uid="$(id -u)"
-  # fnm 临时 shell 路径
   for shell in /run/user/"${uid}"/fnm_multishells/*/bin; do
     [[ -x "${shell}/node" ]] && candidates+=("$shell")
   done
-  # 稳定 alias / 已安装版本
   for shell in \
     "${HOME}/.fnm/aliases/default/bin" \
     "${HOME}/.fnm/current/bin" \
@@ -62,11 +61,6 @@ ensure_node() {
   fi
   echo "未找到 node，请安装 Node.js 或配置 fnm PATH" >&2
   exit 1
-}
-
-py_env() {
-  # 避免 Cursor/沙箱注入的 /tmp/tmp.* 工作区；必须把 "$@" 传给 env
-  env -u WORKSPACE_DIR WORKSPACE_DIR="$WORKSPACE" "$@"
 }
 
 port_pids() {
@@ -93,7 +87,6 @@ stop_one() {
   local pid
   pid="$(read_pid "$name" || true)"
   if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then
-    # 子 shell 启动时顺带收掉进程组，避免留下 next-server 孤儿
     kill -- "-${pid}" 2>/dev/null || kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
@@ -111,21 +104,22 @@ kill_port() {
 cmd_stop() {
   stop_one mcp
   stop_one api
+  stop_one agent_pi
   stop_one client
   kill_port 8765
   kill_port 8766
+  kill_port 8767
   kill_port 3000
-  # Next 16 锁文件：进程已死但 lock 仍在时，新实例会立刻退出
   rm -f "${ROOT}/client/.next/dev/lock"
-  # 兜底：本仓库残留的 next-server
   pkill -f "${ROOT}/client/.*next-server" 2>/dev/null || true
   pkill -f "next dev --turbopack --port 3000" 2>/dev/null || true
+  pkill -f "${ROOT}/agent-pi/.*tsx src/index.ts" 2>/dev/null || true
   sleep 0.5
   echo "已停止"
 }
 
 cmd_status() {
-  for port in 8765 8766 3000; do
+  for port in 8765 8766 8767 3000; do
     local pids
     pids="$(port_pids "$port" | tr '\n' ' ')"
     if [[ -n "${pids// /}" ]]; then
@@ -135,9 +129,14 @@ cmd_status() {
     fi
   done
   if curl -sf http://127.0.0.1:8766/health >/dev/null 2>&1; then
-    echo "Agent API health: ok"
+    echo "Workbench API health: ok"
   else
-    echo "Agent API health: 不可用"
+    echo "Workbench API health: 不可用"
+  fi
+  if curl -sf http://127.0.0.1:8767/health >/dev/null 2>&1; then
+    echo "agent-pi health: ok"
+  else
+    echo "agent-pi health: 不可用"
   fi
   if curl -sf http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
     echo "Next.js proxy health: ok"
@@ -154,10 +153,15 @@ cmd_start() {
     echo "client/node_modules 不存在，正在 npm install …"
     (cd "${ROOT}/client" && npm install --registry=https://registry.npmmirror.com)
   fi
+  if [[ ! -d "${ROOT}/agent-pi/node_modules" ]]; then
+    echo "agent-pi/node_modules 不存在，正在 npm install …"
+    (cd "${ROOT}/agent-pi" && npm install --registry=https://registry.npmjs.org)
+  fi
 
   cmd_stop
   : >"${LOG_DIR}/mcp.log"
   : >"${LOG_DIR}/api.log"
+  : >"${LOG_DIR}/agent_pi.log"
   : >"${LOG_DIR}/client.log"
 
   echo "启动 MCP …"
@@ -173,7 +177,7 @@ cmd_start() {
     exit 1
   fi
 
-  echo "启动 FastAPI …"
+  echo "启动 FastAPI (workbench) …"
   (
     cd "${ROOT}/server"
     exec env -u WORKSPACE_DIR WORKSPACE_DIR="$WORKSPACE" "$VENV_PY" server.py
@@ -194,6 +198,34 @@ cmd_start() {
   if [[ "$api_ok" -ne 1 ]]; then
     echo "FastAPI 启动失败，见 ${LOG_DIR}/api.log" >&2
     tail -n 40 "${LOG_DIR}/api.log" >&2 || true
+    cmd_stop
+    exit 1
+  fi
+
+  echo "启动 agent-pi (Pi harness) …"
+  (
+    cd "${ROOT}/agent-pi"
+    # 避免 Cursor 沙箱 HTTPS_PROXY 导致 OpenRouter CONNECT 403
+    exec env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+      -u http_proxy -u https_proxy -u all_proxy \
+      npm run start
+  ) >>"${LOG_DIR}/agent_pi.log" 2>&1 &
+  write_pid agent_pi $!
+
+  pi_ok=0
+  for _ in $(seq 1 60); do
+    if curl -sf http://127.0.0.1:8767/health >/dev/null 2>&1; then
+      pi_ok=1
+      break
+    fi
+    if ! kill -0 "$(read_pid agent_pi)" 2>/dev/null; then
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ "$pi_ok" -ne 1 ]]; then
+    echo "agent-pi 启动失败，见 ${LOG_DIR}/agent_pi.log" >&2
+    tail -n 60 "${LOG_DIR}/agent_pi.log" >&2 || true
     cmd_stop
     exit 1
   fi
@@ -219,18 +251,18 @@ cmd_start() {
   if [[ "$client_ok" -ne 1 ]]; then
     echo "Next.js 启动失败或健康检查未通过，见 ${LOG_DIR}/client.log" >&2
     tail -n 40 "${LOG_DIR}/client.log" >&2 || true
-    # 前端失败时仍保留 API/MCP，便于排查
   fi
 
   echo ""
   echo "开发环境已启动"
-  echo "  前端   http://localhost:3000"
-  echo "  API    http://127.0.0.1:8766/health"
-  echo "  MCP    http://127.0.0.1:8765/mcp"
-  echo "  日志   ${LOG_DIR}/"
+  echo "  前端        http://localhost:3000"
+  echo "  Workbench   http://127.0.0.1:8766/health"
+  echo "  agent-pi    http://127.0.0.1:8767/health"
+  echo "  MCP         http://127.0.0.1:8765/mcp"
+  echo "  日志        ${LOG_DIR}/"
   echo ""
   echo "停止: $0 stop"
-  echo "跟踪日志: tail -f ${LOG_DIR}/api.log ${LOG_DIR}/mcp.log ${LOG_DIR}/client.log"
+  echo "跟踪日志: tail -f ${LOG_DIR}/api.log ${LOG_DIR}/agent_pi.log ${LOG_DIR}/mcp.log ${LOG_DIR}/client.log"
   cmd_status
 }
 

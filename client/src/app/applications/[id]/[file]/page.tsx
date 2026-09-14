@@ -60,9 +60,13 @@ export default async function ApplicationDocumentPage({ params }: PageProps) {
 function DocumentShell({
   title,
   children,
+  backHref = "/applications",
+  backLabel = "返回申请记录",
 }: {
   title: string;
   children: ReactNode;
+  backHref?: string;
+  backLabel?: string;
 }) {
   return (
     <div className="min-h-dvh bg-[linear-gradient(180deg,#071018_0%,#0b1220_100%)]">
@@ -75,10 +79,10 @@ function DocumentShell({
             <h1 className="text-base font-semibold text-zinc-50">{title}</h1>
           </div>
           <Link
-            href="/applications"
+            href={backHref}
             className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-white/10"
           >
-            返回申请记录
+            {backLabel}
           </Link>
         </div>
       </header>

@@ -1,7 +1,7 @@
 """Job-search MCP server (official mcp SDK 2.x).
 
 Tools persist profile / jobs / applications under workspace/.
-The LangChain agent owns evaluation, drafting, and interview prep.
+The Pi harness (agent-pi) owns evaluation, drafting, and interview prep.
 """
 
 from __future__ import annotations
@@ -452,16 +452,12 @@ def get_application(application_id: str) -> str:
 
 @mcp.tool()
 def save_interview_prep(application_id: str, markdown: str) -> str:
-    """保存面试准备（STAR、可能问题、要问面试官的问题）。"""
-    logger.info("save_interview_prep %s", application_id)
-    try:
-        folder = application_dir(application_id)
-    except ValueError as exc:
-        return _error(str(exc))
-    rel = f"{folder}/interview_prep.md"
-    write_text(rel, markdown)
-    upsert_row({"id": application_id, "status": "interview"})
-    return _ok({"application_id": application_id, "path": rel})
+    """已停用：面试准备改由前端 localStorage 保存完整对话正文，禁止写 md 文件。"""
+    logger.info("save_interview_prep blocked application_id=%s", application_id)
+    return _error(
+        "save_interview_prep 已停用。请把完整面试准备 Markdown 直接写在对用户的回复里"
+        "（含岗位要点、STAR、可能问题、要问面试官的问题），不要写摘要，不要给页面链接。"
+    )
 
 
 @mcp.tool()

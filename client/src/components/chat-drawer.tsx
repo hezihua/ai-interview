@@ -4,6 +4,13 @@ import { LoaderCircle, Paperclip, SendHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { MarkdownMessage } from "@/components/markdown-message";
+import {
+  cleanInterviewMarkdown,
+  peekPendingInterviewPrep,
+  saveLocalInterviewPrep,
+  setPendingInterviewPrep,
+  takePendingInterviewPrep,
+} from "@/lib/interview-prep-local";
 import { streamChat } from "@/lib/stream-chat";
 
 type Role = "user" | "assistant";
@@ -63,10 +70,16 @@ function buildQuestionWithFiles(
 export function ChatDrawer({
   open,
   initialText,
+  autoSend = false,
+  autoSendKey = 0,
+  freshThreadKey = 0,
   onClose,
 }: {
   open: boolean;
   initialText: string;
+  autoSend?: boolean;
+  autoSendKey?: number;
+  freshThreadKey?: number;
   onClose: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -77,6 +90,21 @@ export function ChatDrawer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const busyRef = useRef(false);
+  const lastAutoSendKeyRef = useRef(0);
+  const lastFreshThreadKeyRef = useRef(0);
+
+  useEffect(() => {
+    if (!freshThreadKey || lastFreshThreadKeyRef.current === freshThreadKey) {
+      return;
+    }
+    lastFreshThreadKeyRef.current = freshThreadKey;
+    setThreadId(null);
+  }, [freshThreadKey]);
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   useEffect(() => {
     if (open) setInput(initialText);
@@ -90,10 +118,10 @@ export function ChatDrawer({
     if (!open) abortRef.current?.abort();
   }, [open]);
 
-  async function sendQuestion(raw: string) {
+  async function sendQuestion(raw: string, attachmentsOverride?: File[]) {
     const question = raw.trim();
-    const attachments = files;
-    if ((!question && attachments.length === 0) || busy) return;
+    const attachments = attachmentsOverride ?? files;
+    if ((!question && attachments.length === 0) || busyRef.current) return;
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -125,9 +153,10 @@ export function ChatDrawer({
         payload = buildQuestionWithFiles(question, extracted);
       }
       if (!payload.trim()) throw new Error("没有可发送的内容");
+      const interviewPending = peekPendingInterviewPrep();
       const result = await streamChat({
         question: payload,
-        threadId,
+        threadId: interviewPending ? null : threadId,
         signal: controller.signal,
         onToken(text) {
           setMessages((prev) =>
@@ -140,15 +169,47 @@ export function ChatDrawer({
         },
       });
       setThreadId(result.threadId);
+      const cleaned = cleanInterviewMarkdown(result.answer || "");
+      const pending = interviewPending || peekPendingInterviewPrep();
+      if (pending && cleaned.length > 40) {
+        takePendingInterviewPrep();
+        saveLocalInterviewPrep({
+          id: pending.id,
+          applicationId: pending.applicationId || pending.id,
+          title: pending.title,
+          company: pending.company,
+          role: pending.role,
+          markdown: cleaned,
+        });
+      }
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantId
-            ? { ...message, content: result.answer, pending: false }
+            ? {
+                ...message,
+                content:
+                  cleaned || result.answer || message.content || "(无文本回复)",
+                pending: false,
+              }
             : message,
         ),
       );
     } catch (error) {
-      if (controller.signal.aborted) return;
+      setPendingInterviewPrep(null);
+      if (controller.signal.aborted) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  content: message.content || "已取消",
+                  pending: false,
+                }
+              : message,
+          ),
+        );
+        return;
+      }
       const detail =
         error instanceof Error ? error.message : "请求失败，请稍后重试";
       setMessages((prev) =>
@@ -162,6 +223,16 @@ export function ChatDrawer({
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!open || !autoSend || !autoSendKey) return;
+    if (lastAutoSendKeyRef.current === autoSendKey) return;
+    const text = initialText.trim();
+    if (!text) return;
+    lastAutoSendKeyRef.current = autoSendKey;
+    void sendQuestion(text, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only fire on explicit autoSendKey bumps
+  }, [open, autoSend, autoSendKey, initialText]);
 
   return (
     <>
@@ -214,13 +285,13 @@ export function ChatDrawer({
                 >
                   {message.role === "user" ? (
                     <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
-                  ) : message.content ? (
-                    <MarkdownMessage content={message.content} />
-                  ) : (
+                  ) : message.pending && !message.content ? (
                     <p className="flex items-center gap-2 text-sm text-zinc-400">
                       <LoaderCircle className="size-4 animate-spin" />
                       正在处理…
                     </p>
+                  ) : (
+                    <MarkdownMessage content={message.content || "(无文本回复)"} />
                   )}
                 </div>
               </div>

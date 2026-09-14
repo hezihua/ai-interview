@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""FastAPI server for the job-search agent."""
+"""FastAPI workbench API (documents / applications). Chat is served by agent-pi."""
 
 from __future__ import annotations
 
-import json
+import os
 import sys
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -19,35 +18,35 @@ if str(_AGENT) not in sys.path:
 if str(_MCP) not in sys.path:
     sys.path.append(str(_MCP))
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from fastapi.responses import RedirectResponse
 
-from agent import astream_answer_text, create_job_agent, last_ai_text
-from config import Settings, cors_origins_from_env
+from config import cors_origins_from_env
 from extract import ExtractError, extract_text
 from workbench import router as workbench_router
 from workspace import application_dir, read_text, resolve_doc_filename
 
+load_dotenv(_REPO / ".env")
+
 _state: dict[str, Any] = {}
+
+
+def _api_auth_token() -> str:
+    return (os.getenv("API_AUTH_TOKEN") or "").strip()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    settings = Settings.from_env()
-    agent, client = await create_job_agent(settings)
-    _state["settings"] = settings
-    _state["agent"] = agent
-    _state["client"] = client
+    _state["api_auth_token"] = _api_auth_token()
     try:
         yield
     finally:
-        await client.aclose()
         _state.clear()
 
 
-app = FastAPI(title="Job Search Agent", lifespan=lifespan)
+app = FastAPI(title="Job Search Workbench API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(cors_origins_from_env()),
@@ -57,29 +56,14 @@ app.add_middleware(
 )
 
 
-class ChatRequest(BaseModel):
-    question: str = Field(..., min_length=1)
-    thread_id: str | None = None
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    thread_id: str
-
-
 def _require_api_auth(
     authorization: str | None = Header(default=None),
 ) -> None:
-    expected = _state["settings"].api_auth_token
+    expected = _state.get("api_auth_token") or ""
     if not expected:
         return
     if authorization != f"Bearer {expected}":
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-
-def _resolve_thread_id(thread_id: str | None) -> str:
-    value = (thread_id or "").strip()
-    return value or str(uuid.uuid4())
 
 
 app.include_router(
@@ -94,7 +78,7 @@ async def root() -> RedirectResponse:
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "model": _state["settings"].model}
+    return {"status": "ok", "service": "workbench"}
 
 
 @app.get("/v1/applications/{application_id}/{filename}")
@@ -152,70 +136,18 @@ async def extract_documents(
     return {"documents": documents}
 
 
-@app.post("/v1/chat", response_model=ChatResponse)
-async def chat(
-    body: ChatRequest,
-    _: None = Depends(_require_api_auth),
-) -> ChatResponse:
-    thread_id = _resolve_thread_id(body.thread_id)
-    try:
-        result = await _state["agent"].ainvoke(
-            {"messages": [{"role": "user", "content": body.question}]},
-            config={"configurable": {"thread_id": thread_id}},
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return ChatResponse(answer=last_ai_text(result), thread_id=thread_id)
-
-
-@app.post("/v1/chat/stream")
-async def chat_stream(
-    body: ChatRequest,
-    _: None = Depends(_require_api_auth),
-) -> StreamingResponse:
-    thread_id = _resolve_thread_id(body.thread_id)
-
-    async def events():
-        answer_parts: list[str] = []
-        try:
-            async for text in astream_answer_text(
-                _state["agent"], body.question, thread_id
-            ):
-                answer_parts.append(text)
-                yield _sse({"type": "token", "text": text})
-            yield _sse(
-                {
-                    "type": "done",
-                    "thread_id": thread_id,
-                    "answer": "".join(answer_parts) or "(无文本回复)",
-                }
-            )
-        except Exception as exc:
-            yield _sse({"type": "error", "message": str(exc)})
-
-    return StreamingResponse(
-        events(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-def _sse(payload: dict[str, Any]) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
 def main() -> None:
     import uvicorn
 
-    settings = Settings.from_env()
+    host = (os.getenv("API_HOST") or "0.0.0.0").strip()
+    try:
+        port = int((os.getenv("API_PORT") or "8766").strip())
+    except ValueError as exc:
+        raise SystemExit("API_PORT must be an integer") from exc
     uvicorn.run(
         "server:app",
-        host=settings.api_host,
-        port=settings.api_port,
+        host=host,
+        port=port,
         reload=False,
     )
 

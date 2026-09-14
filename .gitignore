@@ -20,9 +20,13 @@ dist/
 build/
 .DS_Store
 .dev/
+node_modules/
+**/node_modules/
 workspace/jobs/*.json
 workspace/applications/*/
 workspace/profile/candidate.md
 workspace/tracker.csv
 !workspace/jobs/.gitkeep
 !workspace/applications/.gitkeep
+agent-pi/node_modules/
+agent-pi/.env

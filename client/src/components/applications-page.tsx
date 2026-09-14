@@ -17,7 +17,6 @@ const DOC_LABELS: [string, string][] = [
   ["cover.md", "求职信"],
   ["posting.md", "JD"],
   ["evaluation.md", "评估"],
-  ["interview_prep.md", "面试准备"],
   ["outcome.md", "结果"],
 ];
 
@@ -57,11 +56,13 @@ export function ApplicationsPage() {
             >
               <div className="flex flex-wrap items-center gap-4">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-teal-400/12 text-sm font-medium text-teal-200">
-                  {initialOf(app.company || app.role || app.id)}
+                  {initialOf(app.title || app.company || app.role || app.id)}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-zinc-100">
-                    {[app.company, app.role].filter(Boolean).join(" · ") || app.id}
+                    {app.title ||
+                      [app.company, app.role].filter(Boolean).join(" · ") ||
+                      app.id}
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
                     {app.created_at ? `创建于 ${timeAgo(app.created_at)}` : ""}

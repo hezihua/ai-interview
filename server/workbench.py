@@ -301,15 +301,36 @@ def _application_entry(slug: str, row: dict[str, str] | None) -> dict[str, Any]:
             docs[filename] = safe_path(f"applications/{slug}/{filename}").is_file()
         except ValueError:
             docs[filename] = False
+
+    company = (row or {}).get("company") or ""
+    role = (row or {}).get("role") or ""
+    job_id = (row or {}).get("job_id") or ""
+    title = f"{company} {role}".strip()
+
+    # tracker 缺字段时，从同名/关联 job JSON 补标题
+    job = None
+    if job_id and re.fullmatch(r"[a-zA-Z0-9_-]{4,64}", job_id):
+        job = read_json(f"jobs/{job_id}.json")
+    if not job and re.fullmatch(r"[a-zA-Z0-9_-]{4,64}", slug):
+        job = read_json(f"jobs/{slug}.json")
+        if job and not job_id:
+            job_id = str(job.get("id") or slug)
+    if job:
+        summary = _summarize_job(job)
+        company = company or str(summary.get("company") or "")
+        role = role or str(summary.get("role") or "")
+        title = title or str(summary.get("title") or "")
+
     return {
         "id": slug,
-        "company": (row or {}).get("company") or "",
-        "role": (row or {}).get("role") or "",
-        "status": (row or {}).get("status") or "",
-        "job_id": (row or {}).get("job_id") or "",
+        "title": title or slug,
+        "company": company,
+        "role": role,
+        "status": (row or {}).get("status") or (str(job.get("status") or "") if job else ""),
+        "job_id": job_id,
         "deadline": (row or {}).get("deadline") or "",
         "notes": (row or {}).get("notes") or "",
-        "created_at": (row or {}).get("created_at") or "",
+        "created_at": (row or {}).get("created_at") or (str(job.get("created_at") or "") if job else ""),
         "updated_at": (row or {}).get("updated_at") or "",
         "docs": docs,
     }

@@ -1,0 +1,25 @@
+{
+  "name": "agent-pi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Job-search agent harness on Pi (OpenRouter + MCP tools)",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.73.1",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@sinclair/typebox": "^0.34.0",
+    "dotenv": "^16.4.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -21,6 +21,7 @@ import {
 } from "react";
 
 import { ChatDrawer } from "@/components/chat-drawer";
+import { setPendingInterviewPrep } from "@/lib/interview-prep-local";
 import {
   fetchWorkbench,
   timeAgo,
@@ -28,7 +29,21 @@ import {
   type Overview,
 } from "@/lib/workbench";
 
-type ChatDrawerApi = { open: (prefill?: string) => void };
+type OpenChatOptions = {
+  autoSend?: boolean;
+  /** 面试准备：强制新会话，完整正文写入 localStorage */
+  interviewPrep?: {
+    id: string;
+    applicationId: string;
+    title: string;
+    company: string;
+    role?: string;
+  };
+};
+
+type ChatDrawerApi = {
+  open: (prefill?: string, options?: OpenChatOptions) => void;
+};
 
 const ChatDrawerContext = createContext<ChatDrawerApi>({ open: () => {} });
 
@@ -49,6 +64,9 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState<boolean | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prefill, setPrefill] = useState("");
+  const [autoSend, setAutoSend] = useState(false);
+  const [autoSendKey, setAutoSendKey] = useState(0);
+  const [freshThreadKey, setFreshThreadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,8 +93,17 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const openChat = (text?: string) => {
+  const openChat = (text?: string, options?: OpenChatOptions) => {
     setPrefill(text ?? "");
+    const shouldAutoSend = Boolean(options?.autoSend && text?.trim());
+    setAutoSend(shouldAutoSend);
+    if (shouldAutoSend) setAutoSendKey((key) => key + 1);
+    if (options?.interviewPrep) {
+      setPendingInterviewPrep(options.interviewPrep);
+      setFreshThreadKey((key) => key + 1);
+    } else {
+      setPendingInterviewPrep(null);
+    }
     setDrawerOpen(true);
   };
 
@@ -211,7 +238,17 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
         </aside>
       </div>
 
-      <ChatDrawer open={drawerOpen} initialText={prefill} onClose={() => setDrawerOpen(false)} />
+      <ChatDrawer
+        open={drawerOpen}
+        initialText={prefill}
+        autoSend={autoSend}
+        autoSendKey={autoSendKey}
+        freshThreadKey={freshThreadKey}
+        onClose={() => {
+          setDrawerOpen(false);
+          setAutoSend(false);
+        }}
+      />
     </ChatDrawerContext.Provider>
   );
 }

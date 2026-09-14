@@ -1,5 +1,3 @@
-import { AGENT_API_BASE, agentAuthHeaders } from "@/lib/agent";
-
 export type JobSummary = {
   id: string;
   title: string;
@@ -48,6 +46,7 @@ export type Overview = {
 
 export type ApplicationEntry = {
   id: string;
+  title: string;
   company: string;
   role: string;
   status: string;
@@ -62,13 +61,19 @@ export type ApplicationEntry = {
 export type ActivityEvent = { at: string; text: string; kind: string };
 
 export async function fetchWorkbench<T>(path: string): Promise<T> {
-  const response = await fetch(`${AGENT_API_BASE}/v1/workbench${path}`, {
-    headers: agentAuthHeaders(),
+  const response = await fetch(`/api/workbench${path}`, {
     cache: "no-store",
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(detail || `读取失败（${response.status}）`);
+    let message = detail || `读取失败（${response.status}）`;
+    try {
+      const parsed = JSON.parse(detail) as { detail?: string; hint?: string };
+      message = [parsed.detail, parsed.hint].filter(Boolean).join("。") || message;
+    } catch {
+      /* plain text */
+    }
+    throw new Error(message);
   }
   return (await response.json()) as T;
 }
