@@ -50,6 +50,17 @@ pip install -r requirements.txt
 
 不要在 `mcp/`、`agent/`、`server/` 再各自建 venv。
 
+### 一键启动开发环境
+
+```bash
+cd /home/hezihua/workspace/ai-interview
+./scripts/dev.sh          # 启动 MCP + API + Next.js
+./scripts/dev.sh status   # 查看端口与健康检查
+./scripts/dev.sh stop     # 停止
+```
+
+日志在 `.dev/logs/`。`WORKSPACE_DIR` 会固定为仓库内 `workspace/`。
+
 ## 用法
 
 ```bash

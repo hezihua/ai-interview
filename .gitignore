@@ -19,6 +19,7 @@ __pycache__/
 dist/
 build/
 .DS_Store
+.dev/
 workspace/jobs/*.json
 workspace/applications/*/
 workspace/profile/candidate.md
