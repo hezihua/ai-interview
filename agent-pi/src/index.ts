@@ -12,13 +12,14 @@ async function main() {
   const mcp = new McpToolBridge(config.mcpUrl, config.mcpAuthToken);
   await mcp.connect();
   const tools = (await mcp.loadTools()).filter(
-    (tool) => tool.name !== "save_interview_prep",
+    (tool) =>
+      tool.name !== "save_interview_prep" && tool.name !== "record_evaluation",
   );
   if (!tools.length) {
     throw new Error(`No tools loaded from MCP at ${config.mcpUrl}`);
   }
   console.log(
-    `Loaded ${tools.length} MCP tools from ${config.mcpUrl} (save_interview_prep disabled; interview prep uses localStorage)`,
+    `Loaded ${tools.length} MCP tools from ${config.mcpUrl} (save_interview_prep/record_evaluation disabled; localStorage save)`,
   );
 
   const pool = new SessionPool(config, tools);

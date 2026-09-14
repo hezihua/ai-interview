@@ -313,30 +313,12 @@ def record_evaluation(
     eligibility: str = "PASS",
     language_gate: str = "PASS",
 ) -> str:
-    """保存五维评分。location 为 PASS/FAIL/FLAG；闸门 FAIL 时不要继续起草。"""
-    logger.info("record_evaluation %s verdict=%s", job_id, verdict)
-    try:
-        job = _load_job(job_id)
-    except ValueError as exc:
-        return _error(str(exc))
-    if not job:
-        return _error(f"Job not found: {job_id}")
-    job["evaluation"] = {
-        "technical": int(technical),
-        "experience": int(experience),
-        "behavioral": int(behavioral),
-        "career": int(career),
-        "location": location.strip().upper(),
-        "overall": int(overall),
-        "verdict": verdict.strip(),
-        "eligibility": eligibility.strip().upper() or "PASS",
-        "language_gate": language_gate.strip().upper() or "PASS",
-        "notes": notes,
-        "recorded_at": utc_now(),
-    }
-    job["status"] = "evaluated"
-    write_json(job_relative(job_id), job)
-    return _ok({"job_id": job_id, "evaluation": job["evaluation"]})
+    """已停用：评估结果改由前端 localStorage 手动保存完整对话正文。"""
+    logger.info("record_evaluation blocked job_id=%s", job_id)
+    return _error(
+        "record_evaluation 已停用。请把完整评估 Markdown 直接写在对用户的回复里"
+        "（闸门、五维评分、匹配要点与缺口、结论），不要写摘要，不要给页面链接。"
+    )
 
 
 @mcp.tool()

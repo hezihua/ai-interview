@@ -21,6 +21,7 @@ import {
 } from "react";
 
 import { ChatDrawer } from "@/components/chat-drawer";
+import { setPendingEvaluation } from "@/lib/evaluation-local";
 import { setPendingInterviewPrep } from "@/lib/interview-prep-local";
 import {
   fetchWorkbench,
@@ -31,10 +32,16 @@ import {
 
 type OpenChatOptions = {
   autoSend?: boolean;
-  /** 面试准备：强制新会话，完整正文写入 localStorage */
   interviewPrep?: {
     id: string;
     applicationId: string;
+    title: string;
+    company: string;
+    role?: string;
+  };
+  evaluation?: {
+    id: string;
+    jobId: string;
     title: string;
     company: string;
     role?: string;
@@ -100,9 +107,15 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
     if (shouldAutoSend) setAutoSendKey((key) => key + 1);
     if (options?.interviewPrep) {
       setPendingInterviewPrep(options.interviewPrep);
+      setPendingEvaluation(null);
+      setFreshThreadKey((key) => key + 1);
+    } else if (options?.evaluation) {
+      setPendingEvaluation(options.evaluation);
+      setPendingInterviewPrep(null);
       setFreshThreadKey((key) => key + 1);
     } else {
       setPendingInterviewPrep(null);
+      setPendingEvaluation(null);
     }
     setDrawerOpen(true);
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, FileText, LoaderCircle } from "lucide-react";
+import { ArrowRight, FileText, LoaderCircle, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +8,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, useChatDrawer } from "@/components/workbench-shell";
 import {
   listLocalInterviewPreps,
+  removeLocalInterviewPrep,
   type LocalInterviewPrep,
 } from "@/lib/interview-prep-local";
 import {
@@ -169,6 +170,15 @@ STAR 至少 2 个完整例子；可能问题至少 8 条（含答法要点）；
     );
   }
 
+  function deletePrep(item: LocalInterviewPrep) {
+    if (!window.confirm(`确定删除「${item.title}」的面试准备？删除后可重新生成。`)) {
+      return;
+    }
+    removeLocalInterviewPrep(item.id);
+    refreshLocal();
+    setSelected(item.id);
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-8 lg:px-10">
       <PageHeader crumb="面试准备" title="求职工作台" />
@@ -207,7 +217,7 @@ STAR 至少 2 个完整例子；可能问题至少 8 条（含答法要点）；
                   还没有面试准备文档
                 </p>
                 <p className="mt-1 text-sm text-zinc-500">
-                  在下方生成后，完整正文会写入本机，并出现在此列表。
+                  在下方生成后，可在对话里继续追问，再手动保存到本机列表。
                 </p>
               </div>
             ) : (
@@ -233,13 +243,24 @@ STAR 至少 2 个完整例子；可能问题至少 8 条（含答法要点）；
                         {" · 本机"}
                       </span>
                     </span>
-                    <Link
-                      href={`/interview/local/${encodeURIComponent(item.id)}`}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-400 px-3.5 py-2 text-sm font-medium text-zinc-950 hover:bg-teal-300"
-                    >
-                      查看完整内容
-                      <ArrowRight className="size-4" />
-                    </Link>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => deletePrep(item)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-300 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-200"
+                        aria-label={`删除 ${item.title}`}
+                      >
+                        <Trash2 className="size-4" />
+                        删除
+                      </button>
+                      <Link
+                        href={`/interview/local/${encodeURIComponent(item.id)}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-teal-400 px-3.5 py-2 text-sm font-medium text-zinc-950 hover:bg-teal-300"
+                      >
+                        查看完整内容
+                        <ArrowRight className="size-4" />
+                      </Link>
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -253,7 +274,7 @@ STAR 至少 2 个完整例子；可能问题至少 8 条（含答法要点）；
                   生成新的准备
                 </h2>
                 <p className="mt-1 text-sm text-zinc-500">
-                  完整内容会出现在右侧对话，并自动保存到本机列表。
+                  在右侧对话追问完毕后，点「保存面试准备」写入本机列表。
                 </p>
               </div>
               {pending.length > 0 ? (
@@ -278,7 +299,7 @@ STAR 至少 2 个完整例子；可能问题至少 8 条（含答法要点）；
                 </p>
               ) : pending.length === 0 ? (
                 <p className="text-sm text-zinc-500">
-                  当前岗位都已有本机面试准备，可在上方打开完整内容。
+                  当前岗位都已有本机面试准备。删除上方文档后，可在此重新生成。
                 </p>
               ) : (
                 <>

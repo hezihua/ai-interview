@@ -1,273 +1,265 @@
 "use client";
 
-import { ArrowRight, ExternalLink, MapPin, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  ExternalLink,
+  FileText,
+  MapPin,
+  Trash2,
+} from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
-import { MarkdownMessage } from "@/components/markdown-message";
 import { PageHeader, useChatDrawer } from "@/components/workbench-shell";
+import {
+  listLocalEvaluations,
+  removeLocalEvaluation,
+  type LocalEvaluation,
+} from "@/lib/evaluation-local";
 import {
   fetchWorkbench,
   initialOf,
   timeAgo,
-  type JobDetail,
   type JobSummary,
 } from "@/lib/workbench";
 
 function JobsPageInner() {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
+  const [localEvals, setLocalEvals] = useState<LocalEvaluation[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<JobDetail | null>(null);
-  const [tab, setTab] = useState<"evaluation" | "raw">("evaluation");
+  const [selectedId, setSelectedId] = useState<string>("");
   const searchParams = useSearchParams();
   const { open } = useChatDrawer();
+
+  function refreshLocal() {
+    setLocalEvals(listLocalEvaluations());
+  }
+
+  useEffect(() => {
+    refreshLocal();
+    const onChange = () => refreshLocal();
+    window.addEventListener("careeros:evaluation-changed", onChange);
+    window.addEventListener("storage", onChange);
+    window.addEventListener("focus", onChange);
+    return () => {
+      window.removeEventListener("careeros:evaluation-changed", onChange);
+      window.removeEventListener("storage", onChange);
+      window.removeEventListener("focus", onChange);
+    };
+  }, []);
 
   useEffect(() => {
     fetchWorkbench<{ jobs: JobSummary[] }>("/jobs")
       .then((data) => {
         setJobs(data.jobs);
         const fromUrl = searchParams.get("sel");
-        const first = fromUrl && data.jobs.some((j) => j.id === fromUrl)
-          ? fromUrl
-          : (data.jobs[0]?.id ?? null);
-        setSelectedId(first);
+        const preferred = data.jobs.find((job) => job.id === fromUrl);
+        setSelectedId((prev) => {
+          if (preferred?.id) return preferred.id;
+          if (prev && data.jobs.some((job) => job.id === prev)) return prev;
+          return data.jobs[0]?.id || "";
+        });
       })
       .catch((err) => setError(err instanceof Error ? err.message : "读取失败"));
   }, [searchParams]);
 
-  useEffect(() => {
-    if (!selectedId) {
-      setDetail(null);
+  const pendingJobs = useMemo(() => {
+    const done = new Set(
+      localEvals.flatMap((item) => [item.id, item.jobId]),
+    );
+    return jobs.filter((job) => !done.has(job.id));
+  }, [jobs, localEvals]);
+
+  const current = useMemo(
+    () =>
+      pendingJobs.find((job) => job.id === selectedId) || pendingJobs[0] || null,
+    [pendingJobs, selectedId],
+  );
+
+  function startEvaluation(job: JobSummary) {
+    open(
+      `请评估岗位「${job.title}」（job_id: ${job.id}）。
+
+硬性要求：
+1. 先 get_framework("evaluation") + get_profile + get_job("${job.id}")
+2. 不要调用 record_evaluation，不要写文件或给页面链接
+3. 在回复中直接输出完整 Markdown 评估，至少包含：
+## 闸门（Eligibility / Language / 地点）
+## 五维评分（技能 / 经验 / 行为 / 职业 / 综合）
+## 匹配要点与缺口
+## 结论与下一步建议
+闸门 FAIL 时明确建议跳过起草。`,
+      {
+        autoSend: true,
+        evaluation: {
+          id: job.id,
+          jobId: job.id,
+          title: job.title,
+          company: job.company,
+          role: job.role,
+        },
+      },
+    );
+  }
+
+  function deleteEvaluation(item: LocalEvaluation) {
+    if (
+      !window.confirm(`确定删除「${item.title}」的评估结果？删除后可重新评估。`)
+    ) {
       return;
     }
-    let cancelled = false;
-    fetchWorkbench<{ job: JobDetail }>(`/jobs/${selectedId}`)
-      .then((data) => {
-        if (!cancelled) {
-          setDetail(data.job);
-          setTab(data.job.evaluation ? "evaluation" : "raw");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setDetail(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId]);
-
-  const gateFailed =
-    detail?.evaluation &&
-    ["eligibility", "language_gate"].some(
-      (key) => String(detail.evaluation?.[key] || "").toUpperCase() === "FAIL",
-    );
+    removeLocalEvaluation(item.id);
+    refreshLocal();
+    setSelectedId(item.jobId || item.id);
+  }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
+    <div className="mx-auto w-full max-w-5xl px-6 py-8 lg:px-10">
       <PageHeader crumb="职位评估" title="求职工作台" />
 
       {error ? (
         <div className="mt-8 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}。确认 FastAPI（server/server.py）已启动。
+          {error}。确认后端已启动（`./scripts/dev.sh start`）。
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[300px_1fr]">
-        <aside className="rounded-2xl border border-white/8 bg-white/3 p-3">
-          <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-xs text-zinc-500">{jobs.length} 个职位</span>
-            <span className="text-xs text-zinc-500">全部</span>
+      <div className="mt-8 space-y-8">
+        <section className="rounded-2xl border border-white/8 bg-white/3 px-6 py-6">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-zinc-100">评估结果</h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                保存在本机 localStorage；对话追问完毕后手动保存。
+              </p>
+            </div>
+            <span className="text-xs text-zinc-500">{localEvals.length} 份结果</span>
           </div>
-          <ul className="mt-1 space-y-1">
-            {jobs.map((job) => (
-              <li key={job.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(job.id)}
-                  className={`flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition ${
-                    selectedId === job.id
-                      ? "bg-teal-400/10"
-                      : "hover:bg-white/4"
-                  }`}
-                >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-teal-400/12 text-sm font-medium text-teal-200">
-                    {initialOf(job.company || job.title)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100">
-                        {job.title}
-                      </span>
-                      <span
-                        className={`size-1.5 shrink-0 rounded-full ${
-                          job.status === "ingested"
-                            ? "bg-orange-400"
-                            : job.status === "evaluated"
-                              ? "bg-teal-300"
-                              : "bg-zinc-500"
-                        }`}
-                      />
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-zinc-500">
-                      {job.company || job.source}
-                      {job.created_at ? ` · ${timeAgo(job.created_at)}` : ""}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))}
-            {jobs.length === 0 ? (
-              <li className="px-3 py-4 text-xs text-zinc-500">
-                还没有职位。点右上角「导入 JD」。
-              </li>
-            ) : null}
-          </ul>
-        </aside>
 
-        <section className="min-w-0">
-          {!detail ? (
-            <div className="rounded-2xl border border-white/8 bg-white/3 px-6 py-16 text-center text-sm text-zinc-500">
-              选择左侧职位查看评估。
+          {localEvals.length === 0 ? (
+            <div className="mt-8 rounded-xl border border-dashed border-white/10 bg-black/10 px-5 py-8 text-center">
+              <FileText className="mx-auto size-5 text-zinc-500" />
+              <p className="mt-3 text-sm font-medium text-zinc-200">
+                还没有评估结果
+              </p>
+              <p className="mt-1 text-sm text-zinc-500">
+                在下方开始 AI 评估，追问完后点「保存评估结果」。
+              </p>
             </div>
           ) : (
-            <div className="rounded-2xl border border-white/8 bg-white/3">
-              <div className="flex items-start justify-between gap-4 px-6 pt-6">
-                <div className="flex items-start gap-4">
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-teal-400/12 text-base font-medium text-teal-200">
-                    {initialOf(detail.company || detail.title)}
+            <ul className="mt-5 divide-y divide-white/6">
+              {localEvals.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center gap-4 py-4 first:pt-2 last:pb-0"
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-teal-400/12 text-sm font-medium text-teal-200">
+                    {initialOf(item.company || item.title)}
                   </span>
-                  <div className="min-w-0">
-                    <p className="text-[11px] tracking-[0.14em] text-zinc-500 uppercase">
-                      {detail.company || detail.source}
-                    </p>
-                    <h2 className="mt-1 text-xl font-semibold tracking-tight text-zinc-50">
-                      {detail.title}
-                    </h2>
-                    <p className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                      {detail.location ? (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="size-3.5" />
-                          {detail.location}
-                        </span>
-                      ) : null}
-                      {detail.url ? (
-                        <a
-                          href={detail.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 hover:text-teal-200"
-                        >
-                          <ExternalLink className="size-3.5" />
-                          原始链接
-                        </a>
-                      ) : null}
-                      <span>状态：{detail.status}</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-5 flex gap-6 border-b border-white/8 px-6">
-                {(
-                  [
-                    ["evaluation", "评估"],
-                    ["raw", "原始 JD"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setTab(key)}
-                    className={`-mb-px border-b-2 pb-2.5 text-sm ${
-                      tab === key
-                        ? "border-teal-300 text-teal-200"
-                        : "border-transparent text-zinc-500 hover:text-zinc-300"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="px-6 py-6">
-                {tab === "evaluation" ? (
-                  detail.evaluation ? (
-                    <div className="space-y-5">
-                      {gateFailed ? (
-                        <div className="rounded-xl border border-orange-400/25 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
-                          闸门未通过（Eligibility / Language）。按 SOP 不建议继续起草。
-                        </div>
-                      ) : null}
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                        {(
-                          [
-                            ["technical", "技能"],
-                            ["experience", "经验"],
-                            ["behavioral", "行为"],
-                            ["career", "职业"],
-                            ["overall", "综合"],
-                          ] as const
-                        ).map(([key, label]) => (
-                          <div
-                            key={key}
-                            className="rounded-xl border border-white/8 bg-white/4 px-3 py-3 text-center"
-                          >
-                            <p className="text-lg font-semibold text-zinc-50">
-                              {String(detail.evaluation?.[key] ?? "—")}
-                            </p>
-                            <p className="mt-0.5 text-[11px] text-zinc-500">{label}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-sm text-zinc-300">
-                        结论：{String(detail.evaluation?.verdict || "—")}
-                      </p>
-                      {detail.evaluation?.notes ? (
-                        <MarkdownMessage
-                          content={String(detail.evaluation.notes)}
-                        />
-                      ) : null}
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            open(`继续起草 ${detail.title} 的 CV 和求职信`)
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-400 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-teal-300"
-                        >
-                          起草申请
-                          <ArrowRight className="size-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center py-10 text-center">
-                      <Sparkles className="size-5 text-teal-300" />
-                      <p className="mt-4 text-sm font-medium text-zinc-200">
-                        准备好开始了吗？
-                      </p>
-                      <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
-                        先通过 Eligibility 和 Language Gate，再进行五维匹配度分析。
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => open(`评估这份 JD（job_id: ${detail.id}）`)}
-                        className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-teal-400 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-teal-300"
-                      >
-                        开始 AI 评估
-                        <ArrowRight className="size-4" />
-                      </button>
-                    </div>
-                  )
-                ) : (
-                  <pre className="max-h-[32rem] overflow-y-auto whitespace-pre-wrap rounded-xl bg-[#0d1520] px-4 py-4 text-xs leading-5 text-zinc-300">
-                    {detail.text || "（无原文）"}
-                  </pre>
-                )}
-              </div>
-            </div>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-zinc-100">
+                      {item.title}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-zinc-500">
+                      {[item.company, item.role].filter(Boolean).join(" · ") ||
+                        "评估结果"}
+                      {item.updatedAt
+                        ? ` · 更新于 ${timeAgo(item.updatedAt)}`
+                        : ""}
+                      {" · 本机"}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => deleteEvaluation(item)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-300 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-200"
+                    >
+                      <Trash2 className="size-4" />
+                      删除
+                    </button>
+                    <Link
+                      href={`/jobs/local/${encodeURIComponent(item.id)}`}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-teal-400 px-3.5 py-2 text-sm font-medium text-zinc-950 hover:bg-teal-300"
+                    >
+                      查看完整内容
+                      <ArrowRight className="size-4" />
+                    </Link>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
+        </section>
+
+        <section className="rounded-2xl border border-white/8 bg-white/3 px-6 py-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-zinc-100">
+                开始新的评估
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                选择尚未保存评估的岗位；完整结果在对话中生成，手动保存到上方列表。
+              </p>
+            </div>
+            {pendingJobs.length > 0 ? (
+              <select
+                value={current?.id || ""}
+                onChange={(event) => setSelectedId(event.target.value)}
+                className="max-w-md rounded-lg border border-white/10 bg-[#101826] px-3 py-2 text-sm text-zinc-200 outline-none focus:border-teal-300/40"
+              >
+                {pendingJobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.title}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
+
+          <div className="mt-8 flex flex-col items-center py-6 text-center">
+            {jobs.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                还没有职位。点右上角「导入 JD」。
+              </p>
+            ) : pendingJobs.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                当前岗位都已有本机评估。删除上方结果后可重新评估。
+              </p>
+            ) : current ? (
+              <>
+                <p className="text-sm font-medium text-zinc-200">{current.title}</p>
+                <p className="mt-2 flex flex-wrap items-center justify-center gap-3 text-xs text-zinc-500">
+                  {current.location ? (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="size-3.5" />
+                      {current.location}
+                    </span>
+                  ) : null}
+                  {current.url ? (
+                    <a
+                      href={current.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 hover:text-teal-200"
+                    >
+                      <ExternalLink className="size-3.5" />
+                      原始链接
+                    </a>
+                  ) : null}
+                  <span>{current.company || current.source}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => startEvaluation(current)}
+                  className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-teal-400 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-teal-300"
+                >
+                  开始 AI 评估
+                  <ArrowRight className="size-4" />
+                </button>
+              </>
+            ) : null}
+          </div>
         </section>
       </div>
     </div>

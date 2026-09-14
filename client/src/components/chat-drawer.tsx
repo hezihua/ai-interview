@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, Paperclip, SendHorizontal, X } from "lucide-react";
+import { LoaderCircle, Paperclip, Save, SendHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { MarkdownMessage } from "@/components/markdown-message";
@@ -8,9 +8,15 @@ import {
   cleanInterviewMarkdown,
   peekPendingInterviewPrep,
   saveLocalInterviewPrep,
-  setPendingInterviewPrep,
   takePendingInterviewPrep,
+  type PendingInterviewPrep,
 } from "@/lib/interview-prep-local";
+import {
+  peekPendingEvaluation,
+  saveLocalEvaluation,
+  takePendingEvaluation,
+  type PendingEvaluation,
+} from "@/lib/evaluation-local";
 import { streamChat } from "@/lib/stream-chat";
 
 type Role = "user" | "assistant";
@@ -67,6 +73,19 @@ function buildQuestionWithFiles(
   return `${instruction}\n\n${blocks.join("\n\n")}`;
 }
 
+function buildSaveMarkdown(messages: ChatMessage[]): string {
+  const parts = messages
+    .filter(
+      (message) =>
+        message.role === "assistant" &&
+        !message.error &&
+        !message.pending &&
+        message.content.trim(),
+    )
+    .map((message) => cleanInterviewMarkdown(message.content));
+  return parts.filter(Boolean).join("\n\n---\n\n").trim();
+}
+
 export function ChatDrawer({
   open,
   initialText,
@@ -87,6 +106,11 @@ export function ChatDrawer({
   const [threadId, setThreadId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [interviewTarget, setInterviewTarget] =
+    useState<PendingInterviewPrep | null>(null);
+  const [evaluationTarget, setEvaluationTarget] =
+    useState<PendingEvaluation | null>(null);
+  const [saveHint, setSaveHint] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -100,6 +124,10 @@ export function ChatDrawer({
     }
     lastFreshThreadKeyRef.current = freshThreadKey;
     setThreadId(null);
+    setMessages([]);
+    setSaveHint(null);
+    setInterviewTarget(peekPendingInterviewPrep());
+    setEvaluationTarget(peekPendingEvaluation());
   }, [freshThreadKey]);
 
   useEffect(() => {
@@ -107,16 +135,62 @@ export function ChatDrawer({
   }, [busy]);
 
   useEffect(() => {
-    if (open) setInput(initialText);
-  }, [open, initialText]);
+    if (open) {
+      setInput(initialText);
+      if (!interviewTarget) setInterviewTarget(peekPendingInterviewPrep());
+      if (!evaluationTarget) setEvaluationTarget(peekPendingEvaluation());
+    }
+  }, [open, initialText, interviewTarget, evaluationTarget]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
+  }, [messages, saveHint]);
 
   useEffect(() => {
     if (!open) abortRef.current?.abort();
   }, [open]);
+
+  function saveInterviewPrep() {
+    const target = interviewTarget || peekPendingInterviewPrep();
+    if (!target) return;
+    const markdown = buildSaveMarkdown(messages);
+    if (markdown.length < 40) {
+      setSaveHint("还没有可保存的完整内容，请先生成或继续追问。");
+      return;
+    }
+    saveLocalInterviewPrep({
+      id: target.id,
+      applicationId: target.applicationId || target.id,
+      title: target.title,
+      company: target.company,
+      role: target.role,
+      markdown,
+    });
+    takePendingInterviewPrep();
+    setInterviewTarget(null);
+    setSaveHint("已保存到「面试准备」列表。");
+  }
+
+  function saveEvaluation() {
+    const target = evaluationTarget || peekPendingEvaluation();
+    if (!target) return;
+    const markdown = buildSaveMarkdown(messages);
+    if (markdown.length < 40) {
+      setSaveHint("还没有可保存的完整内容，请先评估或继续追问。");
+      return;
+    }
+    saveLocalEvaluation({
+      id: target.id,
+      jobId: target.jobId || target.id,
+      title: target.title,
+      company: target.company,
+      role: target.role,
+      markdown,
+    });
+    takePendingEvaluation();
+    setEvaluationTarget(null);
+    setSaveHint("已保存到「评估结果」列表。");
+  }
 
   async function sendQuestion(raw: string, attachmentsOverride?: File[]) {
     const question = raw.trim();
@@ -145,6 +219,7 @@ export function ChatDrawer({
     setInput("");
     setFiles([]);
     setBusy(true);
+    setSaveHint(null);
 
     try {
       let payload = question;
@@ -153,10 +228,9 @@ export function ChatDrawer({
         payload = buildQuestionWithFiles(question, extracted);
       }
       if (!payload.trim()) throw new Error("没有可发送的内容");
-      const interviewPending = peekPendingInterviewPrep();
       const result = await streamChat({
         question: payload,
-        threadId: interviewPending ? null : threadId,
+        threadId,
         signal: controller.signal,
         onToken(text) {
           setMessages((prev) =>
@@ -170,18 +244,6 @@ export function ChatDrawer({
       });
       setThreadId(result.threadId);
       const cleaned = cleanInterviewMarkdown(result.answer || "");
-      const pending = interviewPending || peekPendingInterviewPrep();
-      if (pending && cleaned.length > 40) {
-        takePendingInterviewPrep();
-        saveLocalInterviewPrep({
-          id: pending.id,
-          applicationId: pending.applicationId || pending.id,
-          title: pending.title,
-          company: pending.company,
-          role: pending.role,
-          markdown: cleaned,
-        });
-      }
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantId
@@ -194,8 +256,12 @@ export function ChatDrawer({
             : message,
         ),
       );
+      if (interviewTarget || peekPendingInterviewPrep()) {
+        setSaveHint("可继续追问；准备好后点下方「保存面试准备」。");
+      } else if (evaluationTarget || peekPendingEvaluation()) {
+        setSaveHint("可继续追问；准备好后点下方「保存评估结果」。");
+      }
     } catch (error) {
-      setPendingInterviewPrep(null);
       if (controller.signal.aborted) {
         setMessages((prev) =>
           prev.map((message) =>
@@ -234,6 +300,35 @@ export function ChatDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only fire on explicit autoSendKey bumps
   }, [open, autoSend, autoSendKey, initialText]);
 
+  const activeInterview = Boolean(
+    interviewTarget || peekPendingInterviewPrep(),
+  );
+  const activeEvaluation = Boolean(
+    evaluationTarget || peekPendingEvaluation(),
+  );
+  const canSave =
+    (activeInterview || activeEvaluation) &&
+    buildSaveMarkdown(messages).length >= 40 &&
+    !busy;
+
+  const modeTitle = interviewTarget
+    ? `面试准备：${interviewTarget.title}（追问完再手动保存）`
+    : evaluationTarget
+      ? `职位评估：${evaluationTarget.title}（追问完再手动保存）`
+      : "起草、导入 JD、追问都从这里走";
+
+  const saveLabel = activeInterview
+    ? "保存面试准备"
+    : activeEvaluation
+      ? "保存评估结果"
+      : "";
+
+  const onSave = activeInterview
+    ? saveInterviewPrep
+    : activeEvaluation
+      ? saveEvaluation
+      : undefined;
+
   return (
     <>
       <div
@@ -250,9 +345,7 @@ export function ChatDrawer({
         <header className="flex items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-zinc-50">Agent 对话</h2>
-            <p className="text-[11px] text-zinc-500">
-              起草、导入 JD、追问都从这里走
-            </p>
+            <p className="text-[11px] text-zinc-500">{modeTitle}</p>
           </div>
           <button
             type="button"
@@ -300,6 +393,25 @@ export function ChatDrawer({
           <div ref={bottomRef} />
         </div>
 
+        {(activeInterview || activeEvaluation || saveHint) && (
+          <div className="border-t border-white/8 px-3 py-2">
+            {saveHint ? (
+              <p className="mb-2 text-[11px] leading-5 text-zinc-400">{saveHint}</p>
+            ) : null}
+            {onSave ? (
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={!canSave}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-400 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-teal-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Save className="size-4" />
+                {saveLabel}
+              </button>
+            ) : null}
+          </div>
+        )}
+
         <form
           className="border-t border-white/8 p-3"
           onSubmit={(event) => {
@@ -336,7 +448,11 @@ export function ChatDrawer({
                 void sendQuestion(input);
               }
             }}
-            placeholder="粘贴 JD、起草申请、追问…"
+            placeholder={
+              interviewTarget || evaluationTarget
+                ? "继续追问细节…"
+                : "粘贴 JD、起草申请、追问…"
+            }
             disabled={busy}
             rows={3}
             className="w-full resize-none rounded-xl border border-white/10 bg-[#101826] px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-teal-300/40"
