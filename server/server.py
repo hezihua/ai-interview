@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any
 
 _REPO = Path(__file__).resolve().parent.parent
-_AGENT = _REPO / "agent"
 _MCP = _REPO / "mcp"
-if str(_AGENT) not in sys.path:
-    sys.path.insert(0, str(_AGENT))
+_SERVER = Path(__file__).resolve().parent
+if str(_SERVER) not in sys.path:
+    sys.path.insert(0, str(_SERVER))
 # 追加到末尾，避免 uvicorn 把 mcp/server.py 当成 "server:app"
 if str(_MCP) not in sys.path:
     sys.path.append(str(_MCP))

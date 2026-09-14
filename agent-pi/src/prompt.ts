@@ -1,4 +1,4 @@
-/** 求职 SOP 系统提示（从 agent/config.py SYSTEM_PROMPT 迁移） */
+/** 求职 SOP 系统提示 */
 export const SYSTEM_PROMPT = `\
 你是求职助手。通过 MCP 工具管理档案、岗位和申请材料，并按 SOP 推进。
 详细评分与文风规则用 get_framework 读取（evaluation / writing / interview）。

@@ -1,7 +1,4 @@
-# 全项目共用一份依赖（mcp SDK 2.x）。Agent / FastAPI / MCP 使用同一个 .venv。
-langchain>=1.0.0,<2.0.0
-langchain-openrouter>=0.2.0,<1.0.0
-langgraph>=1.0.0,<2.0.0
+# 全项目共用一份依赖（mcp SDK 2.x）。FastAPI / MCP 使用同一个 .venv。
 mcp>=2.0.0,<3.0.0
 httpx>=0.27.0,<1.0.0
 python-dotenv>=1.0.0,<2.0.0

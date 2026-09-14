@@ -6,8 +6,6 @@
 .venv/
 mcp/.venv/
 mcp/.env
-agent/.venv/
-agent/.env
 server/.venv/
 server/.env
 __pycache__/

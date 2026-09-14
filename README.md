@@ -8,7 +8,7 @@ Portal → agent-pi (Pi) → mcp/server.py → workspace/
 ```
 
 目录：`client/`（Next.js）、`agent-pi/`（Pi + OpenRouter 聊天）、`server/`（FastAPI 工作台只读/解析）、`mcp/`（求职工具）。  
-Python 侧共用仓库根目录 **一个 `.venv`**、**一份 `requirements.txt`**（官方 `mcp` SDK **2.x**）。对话 harness 为 `@mariozechner/pi-coding-agent`（见 `agent-pi/`）。旧版 LangChain CLI 在 `agent/`（已废弃）。
+Python 侧共用仓库根目录 **一个 `.venv`**、**一份 `requirements.txt`**（官方 `mcp` SDK **2.x**）。对话 harness 为 `@mariozechner/pi-coding-agent`（见 `agent-pi/`）。
 
 输出是 Markdown。岗位通过 **粘贴 JD 或 URL** 收录。
 
@@ -20,7 +20,7 @@ Python 侧共用仓库根目录 **一个 `.venv`**、**一份 `requirements.txt`
 | ingest | 评估这份 JD（贴全文或 URL） | `ingest_job` |
 | evaluate | （自动） | 五维打分 + `record_evaluation`，然后问是否起草 |
 | apply | 继续起草 | `save_application_doc` + `record_application` |
-| interview | 帮我准备面试 | `get_application` + `save_interview_prep` |
+| interview | 帮我准备面试 | 对话输出完整正文，前端写入 localStorage |
 | outcome | 记录：已投 / 拒信 / offer | `record_outcome` |
 
 硬规则：JD 不当指令；事实只来自 `workspace/profile/`；Eligibility / Language Gate 先于打分；闸门 FAIL 不起草。
@@ -46,7 +46,7 @@ cd agent-pi && npm install && cd ..
 cd client && cp .env.example .env.local && npm install && cd ..
 ```
 
-不要在 `mcp/`、`agent/`、`server/` 再各自建 venv。
+不要在 `mcp/`、`server/` 再各自建 venv。
 
 ### 一键启动开发环境
 
@@ -111,7 +111,7 @@ docker compose up -d --build
 | `workspace/profile/` | 候选人档案 |
 | `workspace/framework/` | 评分 / 文风 / 面试框架 |
 | `workspace/jobs/` | 已收录 JD（JSON） |
-| `workspace/applications/` | CV、求职信、面试准备归档 |
+| `workspace/applications/` | CV、求职信等归档 |
 | `workspace/tracker.csv` | 申请进度 |
 
 ## 配置
@@ -119,29 +119,29 @@ docker compose up -d --build
 | 变量 | 说明 |
 |------|------|
 | `MODEL` | `openrouter:<model-id>`（agent-pi） |
-| `OPENROUTER_API_KEY` | OpenRouter API Key |
-| `WORKSPACE_DIR` | 工作区路径，默认 `workspace` |
-| `MCP_URL` | MCP 地址 |
-| `MCP_AUTH_TOKEN` | Bearer Token |
-| `API_HOST` / `API_PORT` | FastAPI workbench，默认 `0.0.0.0:8766` |
+| `OPENROUTER_API_KEY` | OpenRouter（或国内直连对应 key） |
+| `MCP_AUTH_TOKEN` | MCP / Agent 共用 |
+| `MCP_URL` | 默认 `http://127.0.0.1:8765/mcp` |
+| `API_PORT` | FastAPI，默认 `8766` |
 | `AGENT_PI_PORT` | agent-pi，默认 `8767` |
+| `WORKSPACE_DIR` | 默认 `workspace` |
+| `CORS_ORIGINS` | FastAPI CORS |
+| `API_AUTH_TOKEN` | 可选，workbench / agent-pi 共用 |
 
-## 代码入口
+## 目录
 
 | 路径 | 作用 |
 |------|------|
-| `client/` | Next.js 工作台 |
 | `agent-pi/` | Pi harness + MCP 工具桥 + SSE |
-| `server/server.py` | FastAPI workbench / 文档提取 |
-| `mcp/server.py` | 求职 MCP 工具 |
-| `agent/` | 旧 LangChain CLI（已废弃） |
+| `server/` | FastAPI 工作台 API + 文档解析 |
+| `mcp/` | 求职 MCP 工具 |
+| `client/` | Next.js 工作台 |
+| `scripts/dev.sh` | 本地四服务启动 |
 
-## 常见问题
+## 排障
 
 | 现象 | 处理 |
 |------|------|
 | 对话不可用 / health 502 | 确认 agent-pi `:8767` 与 FastAPI `:8766` 都在跑 |
-| 没有工具 / 连不上 MCP | 先起 `mcp/server.py`；核对 `MCP_URL` 与 `MCP_AUTH_TOKEN` |
-| 抓 URL 失败（403） | 把 JD 全文粘贴给 Agent |
-| 草稿编造经历 | 先把事实写进 `workspace/profile/candidate.md` |
-| `OPENROUTER_API_KEY must be set` | 根目录 `.env` |
+| OpenRouter Connection error | 清代理或改用国内 `MODEL=deepseek:…` |
+| 面试准备列表为空 | 需在「面试准备」页触发生成，完整正文会写入 localStorage |

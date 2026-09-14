@@ -44,7 +44,7 @@ services:
       API_HOST: "0.0.0.0"
       API_PORT: "8766"
       MCP_URL: http://mcp:8765/mcp
-      PYTHONPATH: /app/agent
+      PYTHONPATH: /app
     depends_on:
       mcp:
         condition: service_healthy
